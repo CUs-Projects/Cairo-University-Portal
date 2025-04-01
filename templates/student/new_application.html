@@ -1,0 +1,193 @@
+{% extends "student_layout.html" %}
+
+{% block page_title %}New Application{% endblock %}
+
+{% block main_content %}
+<div class="card">
+    <div class="card-header">
+        <h3>Start New Application</h3>
+    </div>
+    
+    <div class="card-body">
+        <!-- Make sure the form includes the CSRF token -->
+        <form method="POST" action="{{ url_for('student_new_application') }}">
+            {{ form.csrf_token }}
+            <div class="mb-3">
+                <label for="program" class="form-label">Program</label>
+                {{ form.program(class="form-select", id="program", required=True) }}
+            </div>
+            <button type="submit" class="btn btn-primary">Submit Application</button>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-6">
+    <div class="card-header">
+        <h3>Program Information</h3>
+    </div>
+    
+    <div class="card-body">
+        <div id="program-details">
+            <p class="text-muted text-center">Please select a program above to see its details.</p>
+        </div>
+        
+        <!-- Additional program details would go here -->
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    // Initialize - Fetch programs and populate the dropdown
+    document.addEventListener('DOMContentLoaded', function() {
+        const programSelect = document.getElementById('program');
+        const programDetails = document.getElementById('program-details');
+        
+        // Show loading message in dropdown
+        programSelect.innerHTML = '<option value="">Loading programs...</option>';
+        
+        // Fetch available programs
+        fetch('/api/programs')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Clear loading message
+                    programSelect.innerHTML = '<option value="">-- Select a Program --</option>';
+                    
+                    // Add each program to the dropdown
+                    data.programs.forEach(program => {
+                        const option = document.createElement('option');
+                        option.value = JSON.stringify({
+                            degree_type: program.degree_type,
+                            name: program.name,
+                            id: program.id
+                        });
+                        option.textContent = `${program.degree_type} in ${program.name}`;
+                        programSelect.appendChild(option);
+                    });
+                    
+                    console.log(`Loaded ${data.programs.length} programs`);
+                } else {
+                    console.error('Failed to load programs:', data.message);
+                    programSelect.innerHTML = '<option value="">Error loading programs</option>';
+                    programDetails.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h4>Error Loading Programs</h4>
+                            <p>${data.message || 'Unable to load programs. Please try refreshing the page.'}</p>
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching programs:', error);
+                programSelect.innerHTML = '<option value="">Error loading programs</option>';
+                programDetails.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h4>Error Loading Programs</h4>
+                        <p>Unable to connect to the server. Please check your internet connection and try again.</p>
+                        <p class="small text-muted">Technical details: ${error.message}</p>
+                    </div>
+                `;
+            });
+    });
+
+    // Update the JavaScript to handle the program selection
+    document.getElementById('program').addEventListener('change', function() {
+        const programValue = this.value;
+        const programDetails = document.getElementById('program-details');
+        
+        // Show default message when no program is selected
+        if (!programValue) {
+            programDetails.innerHTML = '<p class="text-muted text-center">Please select a program above to see its details.</p>';
+            return;
+        }
+        
+        // Parse the program data from the value
+        try {
+            const programData = JSON.parse(programValue);
+            
+            // Show loading message
+            programDetails.innerHTML = '<p class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading program details...</p>';
+            
+            // Use the correct API endpoint based on the backend implementation
+            // Looking at the server code, the endpoint is /api/program-info with query parameters
+            fetch(`/api/program-info?degree=${encodeURIComponent(programData.degree_type)}&name=${encodeURIComponent(programData.name)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        const program = data.program;
+                        console.log("Program details received:", program);
+                        
+                        // Build program details HTML
+                        let html = `
+                            <h4>${program.degree_type} in ${program.name}</h4>
+                            <p class="mb-4">${program.description || 'No description available.'}</p>
+                            
+                            <div class="info-row">
+                                <span class="info-label">Total Credits:</span>
+                                <span class="info-value">${program.total_credits}</span>
+                            </div>
+                        `;
+                        
+                        // Add courses information
+                        if (program.semester1_courses.length > 0 || program.semester2_courses.length > 0) {
+                            html += '<h5 class="mt-4 mb-3">Courses</h5>';
+                            
+                            if (program.semester1_courses.length > 0) {
+                                html += '<h6>Semester 1</h6><ul>';
+                                program.semester1_courses.forEach(course => {
+                                    html += `<li>${course.code}: ${course.title} (${course.credits} credits)</li>`;
+                                });
+                                html += '</ul>';
+                            }
+                            
+                            if (program.semester2_courses.length > 0) {
+                                html += '<h6>Semester 2</h6><ul>';
+                                program.semester2_courses.forEach(course => {
+                                    html += `<li>${course.code}: ${course.title} (${course.credits} credits)</li>`;
+                                });
+                                html += '</ul>';
+                            }
+                        }
+                        
+                        programDetails.innerHTML = html;
+                    } else {
+                        // Show error message if API call fails
+                        console.error('Error loading program details:', data.message);
+                        programDetails.innerHTML = `
+                            <div class="alert alert-warning">
+                                <h4>${programData.degree_type} in ${programData.name}</h4>
+                                <p>Unable to load detailed information for this program. Please contact the faculty office.</p>
+                                <p class="small text-muted">Error: ${data.message || 'Unknown error'}</p>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching program details:', error);
+                    programDetails.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h4>Error Loading Program Details</h4>
+                            <p>Unable to load program details. Please try again later or contact support.</p>
+                            <p class="small text-muted">Technical details: ${error.message}</p>
+                        </div>
+                    `;
+                });
+        } catch (error) {
+            console.error('Error parsing program data:', error);
+            programDetails.innerHTML = '<p class="text-danger">Invalid program selection. Please try again.</p>';
+        }
+    });
+</script>
+{% endblock %}
